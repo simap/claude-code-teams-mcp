@@ -41,7 +41,8 @@ class TeammateMember(BaseModel):
     tmux_pane_id: str = Field(alias="tmuxPaneId")
     cwd: str
     subscriptions: list = Field(default_factory=list)
-    backend_type: str = Field(alias="backendType", default="tmux")
+    backend_type: str = Field(alias="backendType", default="claude")
+    opencode_session_id: str | None = Field(alias="opencodeSessionId", default=None)
     is_active: bool = Field(alias="isActive", default=False)
 
 
@@ -137,6 +138,7 @@ class ShutdownApproved(BaseModel):
     timestamp: str
     pane_id: str = Field(alias="paneId")
     backend_type: str = Field(alias="backendType")
+    session_id: str | None = Field(alias="sessionId", default=None)
 
 
 class TeamCreateResult(BaseModel):
