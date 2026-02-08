@@ -18,7 +18,9 @@ class OpenCodeAPIError(Exception):
         self.response_body = response_body
 
 
-def _request(method: str, url: str, body: dict | None = None, timeout: int = 15) -> bytes:
+def _request(
+    method: str, url: str, body: dict | None = None, timeout: int = 15
+) -> bytes:
     headers = {"Content-Type": "application/json"}
     data = json.dumps(body).encode() if body is not None else None
     req = urllib.request.Request(url, data=data, headers=headers, method=method)
@@ -36,25 +38,31 @@ def _request(method: str, url: str, body: dict | None = None, timeout: int = 15)
         if status == 400:
             raise OpenCodeAPIError(
                 f"Opencode rejected request to {endpoint}: {body_text or status}",
-                status_code=status, response_body=body_text,
+                status_code=status,
+                response_body=body_text,
             )
         if status == 404:
             raise OpenCodeAPIError(
                 f"Opencode resource not found at {endpoint}",
-                status_code=status, response_body=body_text,
+                status_code=status,
+                response_body=body_text,
             )
         if status >= 500:
             raise OpenCodeAPIError(
                 f"Opencode server error ({status}) on {endpoint}: {body_text}",
-                status_code=status, response_body=body_text,
+                status_code=status,
+                response_body=body_text,
             )
         raise OpenCodeAPIError(
             f"Unexpected response from opencode ({status}) on {endpoint}: {body_text}",
-            status_code=status, response_body=body_text,
+            status_code=status,
+            response_body=body_text,
         )
     except urllib.error.URLError as e:
         if isinstance(e.reason, socket.timeout):
-            raise OpenCodeAPIError(f"Opencode server at {url} timed out after {timeout}s")
+            raise OpenCodeAPIError(
+                f"Opencode server at {url} timed out after {timeout}s"
+            )
         raise OpenCodeAPIError(f"Cannot reach opencode server at {url}: {e.reason}")
     except socket.timeout:
         raise OpenCodeAPIError(f"Opencode server at {url} timed out after {timeout}s")
@@ -64,7 +72,7 @@ _MCP_NOT_CONFIGURED_MSG = """\
 Cannot spawn opencode teammate: the 'claude-teams' MCP server is not configured \
 (or not connected) in the opencode instance at {server_url}.
 
-Add the following to your opencode MCP config (~/.config/opencode/config.json):
+Add the following to your opencode MCP config (~/.config/opencode/opencode.json):
 
 {{
   "mcp": {{
@@ -141,7 +149,9 @@ def list_agents(server_url: str) -> list[dict]:
     return [
         {"name": a["name"], "description": a.get("description", "")}
         for a in data
-        if isinstance(a, dict) and "name" in a and a.get("description")
+        if isinstance(a, dict)
+        and "name" in a
+        and a.get("description")
         and a["name"] not in _OPENCODE_INTERNAL_AGENTS
     ]
 
