@@ -647,7 +647,9 @@ def read_inbox(
     mark_as_read: bool = True,
 ) -> list[dict]:
     """Read messages from an agent's inbox. Returns all messages by default.
-    Set unread_only=True to get only unprocessed messages."""
+    Set unread_only=True to get only unprocessed messages.
+    IMPORTANT: Only read your own inbox (agent_name="team-lead"). Reading another
+    agent's inbox marks their messages as read and hides them from that agent."""
     try:
         config = teams.read_config(team_name)
     except FileNotFoundError:
@@ -702,7 +704,9 @@ async def poll_inbox(
 ) -> list[dict]:
     """Poll an agent's inbox for new unread messages, waiting up to timeout_ms.
     Returns unread messages and marks them as read. Convenience tool for MCP
-    clients that cannot watch the filesystem."""
+    clients that cannot watch the filesystem.
+    IMPORTANT: Only poll your own inbox (agent_name="team-lead"). Polling another
+    agent's inbox marks their messages as read and hides them from that agent."""
     msgs = messaging.read_inbox(
         team_name, agent_name, unread_only=True, mark_as_read=True
     )

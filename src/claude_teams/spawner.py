@@ -23,6 +23,8 @@ You have MCP tools from the claude-teams server for team coordination:
 - task_update(team_name="{team_name}", task_id="...", status="...") - Update task status
 - task_get(team_name="{team_name}", task_id="...") - Get task details
 
+IMPORTANT: Only read your own inbox (agent_name="{name}"). Reading another agent's inbox marks their messages as read and effectively hides them from the intended recipient.
+
 Start by reading your inbox for instructions.
 
 ---
