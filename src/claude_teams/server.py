@@ -83,15 +83,33 @@ def _build_spawn_description(
     if enabled_backends is not None:
         show_claude = show_claude and "claude" in enabled_backends
         show_opencode = show_opencode and "opencode" in enabled_backends
+
+    default_backend = None
+    if enabled_backends:
+        default_backend = enabled_backends[0]
+    elif show_claude:
+        default_backend = "claude"
+    elif show_opencode:
+        default_backend = "opencode"
+
     if show_claude:
-        backends.append("'claude' (default, models: sonnet, opus, haiku)")
+        desc = "'claude' (models: sonnet, opus, haiku)"
+        if default_backend == "claude":
+            desc = "'claude' (default, models: sonnet, opus, haiku)"
+        backends.append(desc)
     if show_opencode:
         model_list = (
             ", ".join(opencode_models) if opencode_models else "none discovered"
         )
-        backends.append(f"'opencode' (models: {model_list})")
+        desc = f"'opencode' (models: {model_list})"
+        if default_backend == "opencode":
+            desc = f"'opencode' (default, models: {model_list})"
+        backends.append(desc)
+
     if backends:
         parts.append(f"Available backends: {'; '.join(backends)}.")
+    else:
+        parts.append("No backends available.")
     if show_opencode and opencode_agents:
         agent_lines = [f"  - {a['name']}: {a['description']}" for a in opencode_agents]
         parts.append(
@@ -104,7 +122,18 @@ def _build_spawn_description(
 def _update_spawn_tool(tool, enabled: list[str], state: dict[str, Any]) -> None:
     tool.parameters["properties"]["backend_type"]["enum"] = list(enabled)
     if enabled:
-        tool.parameters["properties"]["backend_type"]["default"] = enabled[0]
+        default_backend = enabled[0]
+        tool.parameters["properties"]["backend_type"]["default"] = default_backend
+        if default_backend == "opencode":
+            models = state.get("opencode_models", [])
+            env_model = state.get("opencode_default_model")
+            if env_model:
+                tool.parameters["properties"]["model"]["default"] = env_model
+            elif models:
+                tool.parameters["properties"]["model"]["default"] = models[0]
+        else:
+            tool.parameters["properties"]["model"]["default"] = "sonnet"
+
     tool.description = _build_spawn_description(
         state.get("claude_binary"),
         state.get("opencode_binary"),
@@ -138,6 +167,7 @@ async def app_lifespan(server):
             logger.warning(
                 "Failed to fetch opencode agents from %s", opencode_server_url
             )
+    opencode_default_model = os.environ.get("OPENCODE_DEFAULT_MODEL")
 
     enabled_backends = _parse_backends_env(os.environ.get("CLAUDE_TEAMS_BACKENDS", ""))
     if "opencode" in enabled_backends and not opencode_server_url:
@@ -153,6 +183,7 @@ async def app_lifespan(server):
             "opencode_models": opencode_models,
             "opencode_server_url": opencode_server_url,
             "opencode_agents": opencode_agents,
+            "opencode_default_model": opencode_default_model,
         })
     else:
         tool.description = _build_spawn_description(
@@ -168,6 +199,7 @@ async def app_lifespan(server):
         "opencode_server_url": opencode_server_url,
         "opencode_agents": opencode_agents,
         "opencode_models": opencode_models,
+        "opencode_default_model": opencode_default_model,
         "enabled_backends": enabled_backends,
         "session_id": session_id,
         "active_team": None,
@@ -197,12 +229,14 @@ class HarnessDetectionMiddleware(Middleware):
 
         if native_backend and native_backend not in enabled:
             if native_backend == "claude" or _lifespan_state.get("opencode_server_url"):
-                enabled.append(native_backend)
+                enabled.insert(0, native_backend)
 
-        if not enabled:
-            if _lifespan_state.get("claude_binary"):
+        # If backends weren't explicitly restricted via environment variables,
+        # ensure all discovered backends are available.
+        if not _lifespan_state.get("enabled_backends"):
+            if _lifespan_state.get("claude_binary") and "claude" not in enabled:
                 enabled.append("claude")
-            if _lifespan_state.get("opencode_binary") and _lifespan_state.get("opencode_server_url"):
+            if _lifespan_state.get("opencode_server_url") and "opencode" not in enabled:
                 enabled.append("opencode")
 
         _lifespan_state["enabled_backends"] = enabled
@@ -236,7 +270,7 @@ def team_create(
     ctx: Context,
     description: str = "",
 ) -> dict:
-    """Create a new agent team. Sets up team config and task directories under ~/.claude/.
+    """Create a new agent team.
     One team per server session. Team names must be filesystem-safe
     (letters, numbers, hyphens, underscores)."""
     ls = _get_lifespan(ctx)
@@ -269,17 +303,36 @@ def spawn_teammate_tool(
     name: str,
     prompt: str,
     ctx: Context,
-    model: str = "sonnet",
+    model: str | None = None,
     subagent_type: str = "general-purpose",
     plan_mode_required: bool = False,
-    backend_type: Literal["claude", "opencode"] = "claude",
+    backend_type: Literal["claude", "opencode"] | None = None,
 ) -> dict:
     """Spawn a new teammate in tmux. Description is dynamically updated
     at startup with available backends and models."""
     ls = _get_lifespan(ctx)
     enabled = ls.get("enabled_backends", [])
+
+    if backend_type is None:
+        backend_type = enabled[0] if enabled else "claude"
+
     if enabled and backend_type not in enabled:
         raise ToolError(f"Backend {backend_type!r} is not enabled. Enabled: {enabled}")
+
+    # Determine the model. If not provided (None) or if it's the default "sonnet"
+    # (which might be auto-filled by the client from the tool's global default),
+    # we apply the backend-specific default logic.
+    if backend_type == "opencode":
+        models = ls.get("opencode_models", [])
+        env_model = ls.get("opencode_default_model")
+        # Override "sonnet" if it's not actually a discovered model for opencode
+        if model is None or (model == "sonnet" and "sonnet" not in models):
+            if env_model:
+                model = env_model
+            else:
+                model = models[0] if models else "sonnet"
+    elif backend_type == "claude" and model is None:
+        model = "sonnet"
     opencode_agent = None
     if backend_type == "opencode":
         known = {a["name"] for a in ls.get("opencode_agents", [])}
